@@ -33,21 +33,81 @@ build/vivado/               # 生成的 neu_risc_v.xpr 和 Vivado 产物
 - `sources_1/rtl/rv32_sync_mem.v`：同步读、按字节写的 32 位字存储器，可用 `$readmemh` 初始化。
 - `sources_1/rtl/rv32_soc.v`：内核加分离的指令/数据存储器，默认每块 256 字。
 
-### 创建 Vivado 工程
+## 从零开始在 Vivado 中打开与仿真
 
-在安装 Vivado 的机器上，从仓库根目录运行，替换 `<准确器件型号>`：
+教师已确认验收只需仿真，不要求上板。下面以 Windows、仓库路径 `D:/Projects/NEU-Risc-V` 为例；Linux 使用相同的 Tcl 命令，只需替换路径。
+
+### 1. 准备工具
+
+安装 Git 和 Vivado，或使用学校已有的 Vivado 环境。Vivado 安装时需包含所选器件系列的支持；下面示例使用 Artix-7 器件。运行 Vivado 自带的 XSim 无需另外安装 Icarus Verilog、Yosys 或 Make。
+
+### 2. Clone 仓库
+
+在 PowerShell、Git Bash 或 Linux 终端中，进入准备存放项目的目录后执行：
 
 ```sh
-make vivado-project PART=<准确器件型号>
-# 或直接运行
-vivado -mode batch -source scripts/create_project.tcl -tclargs <准确器件型号>
+git clone https://github.com/xiamiyu123/NEU-Risc-V.git
+cd NEU-Risc-V
 ```
 
-随后打开 `build/vivado/neu_risc_v.xpr`。脚本使用 `add_files` 引用仓库中的源文件；在 Vivado 中编辑它们会直接修改工作区。工程已存在时脚本会报错，不覆盖已有工程；更新已有工程可在 GUI 中添加文件，或保留所需设置后移走生成目录再重建。
+确认仓库内有 `scripts/create_project.tcl` 和 `neu_risc_v.srcs/`。`.xpr` 是本地生成文件，clone 后暂时没有该文件是正常的。若已有本地仓库，先处理自己的改动，再用 `git pull` 获取更新。
 
-综合顶层为 `rv32_soc`，工程参数 `IMEM_FILE="demo.mem"` 装入演示程序；RTL 本身仍保留空初始化文件的默认参数。默认仿真顶层为 `tb_rv32_soc`，可在 Simulation Sources 中将 `tb_demo` 或 `tb_rv32i` 设为顶层，运行 Behavioral Simulation。`.mem` 已加入设计文件集，仿真用文件名 `demo.mem` 读取；`make test` 会将它复制到 `build/`，并从该目录运行 Icarus 仿真。
+### 3. 首次创建并打开工程
 
-确认板卡资料后，将 `.xdc` 加入 `neu_risc_v.srcs/constrs_1/`。目前没有板级时钟和引脚约束，工程创建完成不代表已能生成可上板的 bitstream。
+启动 Vivado，在底部 **Tcl Console** 中依次执行：
+
+```tcl
+cd {D:/Projects/NEU-Risc-V}
+set argc 1
+set argv [list xc7a35tcpg236-1]
+source scripts/create_project.tcl
+```
+
+将 `D:/Projects/NEU-Risc-V` 替换为实际 clone 路径。Windows 路径使用 `/`，外层 `{}` 可处理路径中的空格。`argc` 和 `argv` 用来向脚本传递一个器件型号。
+
+`xc7a35tcpg236-1` 只是仿真工程的示例器件，不代表指定开发板。若 Vivado 提示不支持该器件，选择当前安装支持的完整器件型号，并替换 `argv` 中的值。行为仿真不要求该型号对应实际板卡。
+
+成功后 Tcl Console 会输出 `Project created: .../neu_risc_v.xpr`，工程会在当前 Vivado 中打开。工程文件位于：
+
+```text
+NEU-Risc-V/build/vivado/neu_risc_v.xpr
+```
+
+**Sources** 中应包含设计顶层 `rv32_soc`、仿真顶层 `tb_rv32_soc` 和初始化文件 `demo.mem`。脚本使用 `add_files` 引用仓库源文件，在 Vivado 中编辑它们会直接修改工作区。
+
+### 4. 运行行为仿真
+
+在左侧 **Flow Navigator** 中选择 **Simulation → Run Simulation → Run Behavioral Simulation**。脚本已设置运行到测试台结束；若仿真停在中途，在仿真的 Tcl Console 中执行 `run all`。
+
+默认测试台为 `tb_rv32_soc`。在 **Sources → Simulation Sources** 中右键其他测试台，选择 **Set as Top** 即可切换；切换前关闭当前仿真，再重新运行 Behavioral Simulation。三个测试台分别运行，并检查对应输出：
+
+| 测试台 | 检查内容 | 成功输出 |
+| --- | --- | --- |
+| `tb_rv32_soc` | 流水线、冒险、分支、定制指令和存储器 | `PASS: instruction, hazard, branch, custom and memory tests` |
+| `tb_demo` | ROM 初始化和演示程序 | `PASS: initialized ROM demo produced 112234ff` |
+| `tb_rv32i` | RV32I 指令和异常 | `PASS: complete RV32I instruction and trap tests` |
+
+演示程序结束时应有 `result_valid=1`、`result_data=0x112234ff`。`.mem` 已加入工程，测试台使用文件名 `demo.mem` 读取，无需手动改成绝对路径。综合顶层的工程参数为 `IMEM_FILE="demo.mem"`；RTL 本身仍保留空初始化文件的默认参数。
+
+查看内部波形时，在 **Scope** 中选择 `dut` 或 `dut/core`，在 **Objects** 中选中所需信号并使用 **Add to Wave Window**。若信号在首次运行后才加入，执行 **Restart**，再 **Run All**，以记录从复位开始的波形。保存自检日志和关键波形用于验收。
+
+### 5. 后续重新打开
+
+选择 Vivado 的 **Open Project**，打开 `build/vivado/neu_risc_v.xpr`，无需重复执行创建脚本。脚本不会覆盖已有工程；若需要重建，先关闭工程并保存所需日志、波形和设置，再移走 `build/vivado/` 后重新执行脚本。
+
+### 可选：从命令行生成工程
+
+如果终端已配置 Vivado 命令，在仓库根目录执行：
+
+```sh
+vivado -mode batch -source scripts/create_project.tcl -tclargs xc7a35tcpg236-1
+```
+
+安装了 Make 时，也可以执行 `make vivado-project PART=xc7a35tcpg236-1`。命令结束后，使用 Vivado 的 **Open Project** 打开生成的 `.xpr`。
+
+流程参考 AMD 官方的 [Tcl 创建工程说明](https://docs.amd.com/r/2021.1-English/ug895-vivado-system-level-design-entry/Creating-a-Project-Using-a-Tcl-Script)、[工程打开说明](https://docs.amd.com/r/2020.2-English/ug895-vivado-system-level-design-entry/Opening-a-Project)和 [XSim 命令说明](https://docs.amd.com/r/en-US/ug900-vivado-logic-simulation/Vivado-Simulator-Quick-Reference-Guide)。本机没有 Vivado，工程脚本及上述流程尚未经过实际 Vivado 验证。
+
+## CPU 行为与指令
 
 PC 复位值为 0，地址按字节计。支持 RV32I 的整数运算、分支与跳转、`lb`/`lbu`/`lh`/`lhu`/`lw`、`sb`/`sh`/`sw`、`fence`、`ecall` 和 `ebreak`。单核、顺序、无缓存的存储器接口使 `fence` 无需额外硬件操作。`ecall` 和 `ebreak` 向外部环境报告异常。
 
@@ -78,6 +138,8 @@ jal       x0, 0
 
 定制指令 `uadd8sat` 使用 `custom-0` opcode `0001011`、R 型字段、`funct3=000`、`funct7=0000000`。它对两个源寄存器内的四对无符号字节分别求和并饱和到 255。演示结果为 `0x112234ff`，写入数据存储器字 0；`rv32_soc` 的 `result_valid` 和 `result_data` 保留这次写入，方便之后接板级观察逻辑。它不是标准汇编器内建的助记符，`neu_risc_v.srcs/sources_1/mem/demo.mem` 已提供机器码。
 
-## 板级状态
+## 验收状态
 
-RTL 已通过本地仿真和 Yosys 通用综合检查，也通过 Yosys 的 Xilinx 7 系列映射检查。已提供 Vivado 工程生成脚本；本机没有 Vivado，尚未验证实际建工程、Vivado 综合和时序。准确器件、引脚和时钟仍待板卡资料确认，实板运行尚未完成。拿到板卡资料后，需要添加板级封装和约束，再以板上可用的输出或调试接口验证 `result_data`。
+2026-10-08，用户转述教师确认验收只需仿真，不要求上板。RTL 已通过本地 Icarus 仿真、Yosys 通用综合及 Xilinx 7 系列映射检查。已提供 Vivado 工程生成脚本；本机没有 Vivado，实际建工程和 Vivado 行为仿真尚未验证。
+
+验收准备包括运行 `tb_rv32_soc`、`tb_demo` 和 `tb_rv32i` 的行为仿真，保存自检通过的日志，并整理流水线转发、load-use 停顿、分支冲刷、异常和定制指令的关键波形。演示程序预期结果为 `result_valid=1`、`result_data=0x112234ff`。板级封装、引脚约束、bitstream 和实板运行作为可选扩展。
