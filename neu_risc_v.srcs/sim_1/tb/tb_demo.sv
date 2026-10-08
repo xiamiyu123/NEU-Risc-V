@@ -6,7 +6,7 @@ module tb_demo;
 
     always #5 clk = ~clk;
 
-    rv32_soc #(.IMEM_FILE("program/demo.hex")) dut (
+    rv32_soc #(.IMEM_FILE("demo.mem")) dut (
         .clk(clk), .rst(rst), .fault(fault),
         .result_valid(result_valid), .result_data(result_data)
     );

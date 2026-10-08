@@ -175,7 +175,7 @@ module tb_rv32_soc;
 
         rst = 1;
         clear_memories();
-        $readmemh("program/demo.hex", dut.imem.mem);
+        $readmemh("demo.mem", dut.imem.mem);
         boot();
         repeat (25) @(negedge clk);
         check32(result_valid, 1, "demo result flag");

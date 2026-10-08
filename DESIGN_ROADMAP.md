@@ -72,3 +72,4 @@
 - 已实现 40 条 RV32I 指令及 `uadd8sat`、五级流水线、同步读存储器、字节写使能、数据转发、load-use 阻塞、控制流冲刷、终止异常接口和可观察的演示结果端口。
 - Icarus Verilog 流水线自检、ROM 初始化演示、RV32I 指令与异常测试通过；Yosys 通用综合检查及 Xilinx 7 系列映射检查通过。运行方式见 [README.md](README.md)。
 - Vivado 时序验证、准确板卡引脚与实板验收仍待开发板资料和硬件。
+- 工作区已按 Vivado 的 `sources_1`、`sim_1`、`constrs_1` 文件集整理，提供 `scripts/create_project.tcl`；生成的工程位于 `build/vivado/`。本机无 Vivado，实际建工程尚未验证。
