@@ -1,4 +1,20 @@
+# ===== Vivado / Xilinx 产物 =====
 build/
 .Xil/
 *.jou
 *.log
+*.str
+webtalk*
+xsim.dir/
+*.wdb
+*.pbw
+*.xpr
+
+# ===== iverilog / 仿真产物 =====
+*.vvp
+*.out
+*.vcd
+obj_dir/
+
+# ===== 本地检查产物（含从教师作业 PDF 提取的图片，不宜公开）=====
+review/pdfimg/
