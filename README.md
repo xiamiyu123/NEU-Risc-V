@@ -2,6 +2,8 @@
 
 本仓库实现五级流水线的 RV32I CPU，覆盖 40 条标准 RV32I 指令，并保留课程设计的定制指令 `uadd8sat`。设计依据和路线图见 [DESIGN_ROADMAP.md](DESIGN_ROADMAP.md)。
 
+CPU 的数据通路、流水线控制、存储器接口、异常行为和验证范围见 [CPU_DESIGN.md](CPU_DESIGN.md)。
+
 ## 运行验证
 
 需要 Icarus Verilog；可选 Yosys 检查可综合性。macOS 上可用 `brew install icarus-verilog yosys` 安装。
@@ -12,7 +14,9 @@ make synth-check
 make synth-xilinx
 ```
 
-`make test` 运行流水线自检、ROM 演示和 RV32I 指令及异常测试，覆盖转发优先级、load-use 停顿、`x0`、分支冲刷、字节/半字访存和定制指令。`make synth-check` 做通用综合，`make synth-xilinx` 做 Xilinx 7 系列映射；日志位于忽略跟踪的 `build/`。
+`make test` 运行八套自检，包含 ALU、译码、寄存器堆、同步存储器单元测试，以及流水线、ROM 演示、RV32I 指令/异常和流水线边界回归。每套测试的输出保存到 `build/<测试台名>.log`，断言失败会令 Make 返回非零退出码。覆盖范围见 [设计书的验证说明](CPU_DESIGN.md#10-验证方式与当前证据)。
+
+可单独运行一套，例如 `make test-tb_alu` 或 `make test-tb_pipeline_edges`。`make synth-check` 做通用综合，`make synth-xilinx` 做 Xilinx 7 系列映射；所有日志位于忽略跟踪的 `build/`。
 
 ## 结构与接口
 
@@ -29,7 +33,11 @@ scripts/create_project.tcl   # Vivado 工程生成脚本
 build/vivado/               # 生成的 neu_risc_v.xpr 和 Vivado 产物
 ```
 
-- `sources_1/rtl/rv32_core.v`：IF/ID/EX/MEM/WB 流水线、译码、转发、阻塞与冲刷。
+- `sources_1/rtl/rv32_core.v`：CPU 主体，连接子模块，管理 IF/ID/EX/MEM/WB 流水线、转发、阻塞、冲刷与异常。
+- `sources_1/rtl/rv32_control.v`：指令译码、立即数与控制信号生成。
+- `sources_1/rtl/rv32_alu.v`：算术、逻辑、移位及定制饱和加法。
+- `sources_1/rtl/rv32_regfile.v`：通用寄存器堆、`x0` 保护与 WB 到 ID 旁路。
+- `sources_1/rtl/rv32_alu_ops.vh`：译码器和 ALU 共用的内部操作编号。
 - `sources_1/rtl/rv32_sync_mem.v`：同步读、按字节写的 32 位字存储器，可用 `$readmemh` 初始化。
 - `sources_1/rtl/rv32_soc.v`：内核加分离的指令/数据存储器，默认每块 256 字。
 
@@ -79,13 +87,15 @@ NEU-Risc-V/build/vivado/neu_risc_v.xpr
 
 在左侧 **Flow Navigator** 中选择 **Simulation → Run Simulation → Run Behavioral Simulation**。脚本已设置运行到测试台结束；若仿真停在中途，在仿真的 Tcl Console 中执行 `run all`。
 
-默认测试台为 `tb_rv32_soc`。在 **Sources → Simulation Sources** 中右键其他测试台，选择 **Set as Top** 即可切换；切换前关闭当前仿真，再重新运行 Behavioral Simulation。三个测试台分别运行，并检查对应输出：
+默认测试台为 `tb_rv32_soc`。在 **Sources → Simulation Sources** 中右键其他测试台，选择 **Set as Top** 即可切换；切换前关闭当前仿真，再重新运行 Behavioral Simulation。原有三个集成测试台的成功输出如下；新增五套测试台也分别运行到 `PASS`：
 
 | 测试台 | 检查内容 | 成功输出 |
 | --- | --- | --- |
 | `tb_rv32_soc` | 流水线、冒险、分支、定制指令和存储器 | `PASS: instruction, hazard, branch, custom and memory tests` |
 | `tb_demo` | ROM 初始化和演示程序 | `PASS: initialized ROM demo produced 112234ff` |
 | `tb_rv32i` | RV32I 指令和异常 | `PASS: complete RV32I instruction and trap tests` |
+
+新增测试台为 `tb_alu`、`tb_control`、`tb_regfile`、`tb_memory`、`tb_pipeline_edges`。ALU 测试包含 65,536 对字节输入，仿真时间约为 78 μs，使用 `run all` 等待其自行结束。工程脚本会收集所有 `.sv` 测试文件；旧工程需刷新文件集或按重建流程重新创建工程。
 
 演示程序结束时应有 `result_valid=1`、`result_data=0x112234ff`。`.mem` 已加入工程，测试台使用文件名 `demo.mem` 读取，无需手动改成绝对路径。综合顶层的工程参数为 `IMEM_FILE="demo.mem"`；RTL 本身仍保留空初始化文件的默认参数。
 
@@ -94,6 +104,8 @@ NEU-Risc-V/build/vivado/neu_risc_v.xpr
 ### 5. 后续重新打开
 
 选择 Vivado 的 **Open Project**，打开 `build/vivado/neu_risc_v.xpr`，无需重复执行创建脚本。脚本不会覆盖已有工程；若需要重建，先关闭工程并保存所需日志、波形和设置，再移走 `build/vivado/` 后重新执行脚本。
+
+若工程创建于模块拆分之前，需要按上述方式重建，使新增的 `rv32_control`、`rv32_alu`、`rv32_regfile` 及共享头文件纳入工程。
 
 ### 可选：从命令行生成工程
 
@@ -142,4 +154,4 @@ jal       x0, 0
 
 2026-10-08，用户转述教师确认验收只需仿真，不要求上板。RTL 已通过本地 Icarus 仿真、Yosys 通用综合及 Xilinx 7 系列映射检查。已提供 Vivado 工程生成脚本；本机没有 Vivado，实际建工程和 Vivado 行为仿真尚未验证。
 
-验收准备包括运行 `tb_rv32_soc`、`tb_demo` 和 `tb_rv32i` 的行为仿真，保存自检通过的日志，并整理流水线转发、load-use 停顿、分支冲刷、异常和定制指令的关键波形。演示程序预期结果为 `result_valid=1`、`result_data=0x112234ff`。板级封装、引脚约束、bitstream 和实板运行作为可选扩展。
+验收准备包括运行八套测试台的行为仿真，保存自检通过的日志，并整理流水线转发、load-use 停顿、分支冲刷、异常和定制指令的关键波形。演示程序预期结果为 `result_valid=1`、`result_data=0x112234ff`。板级封装、引脚约束、bitstream 和实板运行作为可选扩展。

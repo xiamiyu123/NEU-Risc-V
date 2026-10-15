@@ -1,3 +1,4 @@
+`timescale 1ns/1ps
 module rv32_sync_mem #(
     parameter ADDR_BITS = 8,
     parameter INIT_FILE = ""

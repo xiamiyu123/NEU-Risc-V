@@ -11,14 +11,16 @@ create_project neu_risc_v $project_dir -part [lindex $argv 0]
 set_property target_language Verilog [current_project]
 set_property target_simulator XSim [current_project]
 
-add_files -fileset sources_1 -norecurse [glob [file join $src_dir sources_1 rtl *.v]]
+set rtl_dir [file join $src_dir sources_1 rtl]
+add_files -fileset sources_1 -norecurse [glob [file join $rtl_dir *.v] [file join $rtl_dir *.vh]]
+set_property include_dirs [list $rtl_dir] [get_filesets sources_1]
 add_files -fileset sources_1 -norecurse [file join $src_dir sources_1 mem demo.mem]
 set_property top rv32_soc [get_filesets sources_1]
 set_property generic {IMEM_FILE="demo.mem"} [get_filesets sources_1]
 
 set tb_dir [file join $src_dir sim_1 tb]
 add_files -fileset sim_1 -norecurse [glob [file join $tb_dir *.sv] [file join $tb_dir *.svh]]
-set_property include_dirs [list $tb_dir] [get_filesets sim_1]
+set_property include_dirs [list $tb_dir $rtl_dir] [get_filesets sim_1]
 set_property top tb_rv32_soc [get_filesets sim_1]
 set_property xsim.simulate.runtime all [get_filesets sim_1]
 
