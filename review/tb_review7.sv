@@ -49,6 +49,7 @@ module tb_review7;
     endtask
 
     initial begin
+        #1; // 等待存储器 initial 初始化结束，再写入测试程序。
         $display("==== REVIEW TB v7 (remaining RV32I ops) ====");
         clear_mem();
         // xor, and, slt, slti, sltiu, srli, srai, auipc, bge, bgeu, bltu
@@ -91,6 +92,9 @@ module tb_review7;
         check32(dut.core.regfile.regs[6], 32'd7,  "bgeu target x6");
 
         $display("==== RESULT: %0d checks, %0d errors ====", checks, errors);
+        if (errors != 0)
+            $fatal(1, "independent review failed: %0d errors", errors);
+        $display("PASS: independent review (%0d checks)", checks);
         $finish;
     end
 endmodule

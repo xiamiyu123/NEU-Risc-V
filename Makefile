@@ -8,14 +8,27 @@ RTL_DIR := $(SRC_DIR)/rtl
 RTL := $(wildcard $(RTL_DIR)/*.v)
 TESTS := tb_rv32_soc tb_demo tb_rv32i tb_alu tb_control tb_regfile tb_memory tb_pipeline_edges
 TEST_TARGETS := $(addprefix test-,$(TESTS))
+REVIEW_TESTS := tb_review3 tb_review4 tb_review6 tb_review7 tb_review8
+REVIEW_TARGETS := $(addprefix test-,$(REVIEW_TESTS))
+WAVE_TARGETS := $(addprefix wave-,$(TESTS) $(REVIEW_TESTS))
+WAVE_SOURCE = $(if $(filter 1,$(WAVE)),scripts/wave_dump.sv)
+WAVE_TOP = $(if $(filter 1,$(WAVE)),-s wave_dump)
 
-.PHONY: test $(TEST_TARGETS) synth-check synth-xilinx vivado-project
-test: $(TEST_TARGETS)
+.PHONY: test test-review wave $(WAVE_TARGETS) $(TEST_TARGETS) $(REVIEW_TARGETS) synth-check synth-xilinx vivado-project
+test: $(TEST_TARGETS) $(REVIEW_TARGETS)
+test-review: $(REVIEW_TARGETS)
+wave: wave-tb_rv32_soc
+
+$(WAVE_TARGETS): wave-%:
+	$(MAKE) test-$* WAVE=1
+
+$(TEST_TARGETS): TEST_SOURCE_DIR := $(TB_DIR)
+$(REVIEW_TARGETS): TEST_SOURCE_DIR := review
 
 # 每个测试都可单独运行，例如 make test-tb_alu；失败时同样显示并保留日志。
-$(TEST_TARGETS): test-%: build/demo.mem
-	$(IVERILOG) -g2012 -Wall -I $(RTL_DIR) -I $(TB_DIR) -s $* -o build/$* $(RTL) $(TB_DIR)/$*.sv
-	(cd build && $(VVP) $* > $*.log 2>&1) || { cat build/$*.log; exit 1; }
+$(TEST_TARGETS) $(REVIEW_TARGETS): test-%: build/demo.mem
+	$(IVERILOG) -g2012 -Wall -I $(RTL_DIR) -I $(TB_DIR) -s $* $(WAVE_TOP) -o build/$* $(RTL) $(TEST_SOURCE_DIR)/$*.sv $(WAVE_SOURCE)
+	(cd build && $(VVP) $* $(if $(filter 1,$(WAVE)),+wave=$*.vcd) > $*.log 2>&1) || { cat build/$*.log; exit 1; }
 	cat build/$*.log
 
 build/demo.mem: $(SRC_DIR)/mem/demo.mem

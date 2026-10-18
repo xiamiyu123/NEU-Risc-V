@@ -3,6 +3,8 @@
 **被检仓库**：https://github.com/xiamiyu123/NEU-Risc-V （commit `bf50915`，2026-10-15）
 **检查者**：Nekomi（独立复现，未使用仓库自带测试作为唯一依据）
 **实际验收标准**（2026-10-15 用户确认）：**讲解代码 + 仿真演示，不上板**
+> 后续修订：独立测试现已接入 `make test` / `make test-review`，错误计数非零时使用 `$fatal`。ModelSim 示例已改为真实仓库路径脚本，但尚未在 ModelSim/Questa 中运行。以下工具版本、原始行数和资源统计是原审阅环境快照。
+
 **作业原文**：《数字设计与计算机体系结构》课程设计（PDF 共 10 页）
 
 > ⚠️ **本报告已按"讲解 + 仿真"标准重估**。初版曾按"需上板"扣分（无 top / 无 XDC），该扣分项在真实标准下**不成立，已撤销**。
@@ -16,8 +18,8 @@
 | 基础 | **9 条 RISC-V 指令**：`add, slt, sltu, ori, lui, lw, sw, beq, jal` | P6 |
 | 阶段 2 | **五级流水线数据通路**（IF/ID/EX/MEM/WB） | P7 |
 | 阶段 3 | **带转发和阻塞检测的数据通路**（forwarding + load-use stall，"Load-use 检测单元 / BusAFw / BusBFw"） | P8–P9 |
-| 阶段 4 | 指令**扩展** + 分支/跳转 + 定制指令 | 隐含 |
-| 环境（原始文字） | 开发软件 Xilinx Vivado、仿真软件 Mentor ModelSim、硬件平台 ALINX Z7-P | P3 |
+| 阶段 4 | 指令**扩展**、转发、load-use 与定制指令 | P3 任务要求 |
+| 环境（原始文字） | 开发软件 Xilinx Vivado、仿真软件 Mentor ModelSim、硬件平台 ALINX Z7-P | P4 |
 | 成绩 | 出勤 10% + **课设验收 60%** + 课设报告 30%，每组 ≤3 人 | P5 |
 
 > **老师的真实意图**（结合验收 60% + 你确认的"不讲上板"）：
@@ -74,17 +76,19 @@ make synth-xilinx   →  0 problems, 1914 LC, 1541 FDRE, 2×RAMB18E1
 
 ## 三、仓库实际情况
 
-- **RTL**：735 行 / 6 模块（`rv32_alu / rv32_control / rv32_core / rv32_regfile / rv32_sync_mem / rv32_soc`），结构清晰，ALU 操作码抽到 `rv32_alu_ops.vh`。**纯 Verilog-2001 语法**（无 `always_ff`/`logic`/`package` 等 SV 专有构造）→ **ModelSim `vlog` 可直接编过**。
+- **RTL**：735 行 / 6 模块（`rv32_alu / rv32_control / rv32_core / rv32_regfile / rv32_sync_mem / rv32_soc`），结构清晰，ALU 操作码抽到 `rv32_alu_ops.vh`。**纯 Verilog-2001 语法**（无 `always_ff`/`logic`/`package` 等 SV 专有构造）→ 可推断 RTL 具备 ModelSim 兼容基础，**不代表 ModelSim 已实际编译通过**；测试台仍需启用 SystemVerilog。
 - **注释密度**：**已由助手补齐**。原始仅 4%（735 行 RTL 约 34 行注释；`rv32_core.v` 288 行**只有 3 行**）；补齐后 914 行中 247 行为纯注释行、411 行含注释。**逻辑逐字符未改动**（去注释去空白后与原版完全一致），8 套自带测试 + 独立测试全部复跑通过。详见"附：注释补齐记录"。
 - **TB**：1198 行 / 8 个 testbench，自检式（PASS/FAIL + `$fatal`）。
 - **文档**：`README.md` 158 行、`CPU_DESIGN.md` 255 行、`DESIGN_ROADMAP.md` 77 行，另有 `agent.md`。质量高、数据属实。
 - **指令覆盖**：完整 RV32I（README 称 40 条）+ 定制指令 `uadd8sat`（CUSTOM-0）。
 - **提交**：4 次，同一作者，`init` 一次即带完整 CPU。
-- **仿真入口**：`make test`（iverilog）一条命令跑 8 套；另有 `scripts/create_project.tcl` 生成 Vivado 工程走 XSim。**无 ModelSim `.do`/`.mpf` 脚本**。
+- **仿真入口**：`make test`（Icarus）现运行 13 套，`make test-review` 单独运行 5 套复核；另有 `scripts/create_project.tcl` 生成 Vivado 工程走 XSim。原检查时无 ModelSim 脚本；现已补充 `scripts/run_modelsim.do`，尚待实际 ModelSim 验证。
 
 ---
 
-## 四、打分与评价（按"讲解 + 仿真"标准）
+## 四、审阅者主观评价（原始估分，仅供参考）
+
+以下估分没有教师评分细则或同班作品数据支持，不能作为验收成绩预测或技术验证证据。
 
 | 维度 | 得分 | 说明 |
 |---|---|---|
@@ -109,7 +113,7 @@ make synth-xilinx   →  0 problems, 1914 LC, 1541 FDRE, 2×RAMB18E1
 3. **仿真工程化程度高且可复现**：`make test` 一条命令 8 套全跑，自检输出清晰，ALU 单套 77932 断言含随机向量。我复跑两次结果一致。
 4. **文档与实现一致**：README 给的 demo 结果 `112234FF`、指令清单我都独立核对过，**没有吹牛**——这在学生作业里不常见。
 5. **对"不上板"这件事是诚实的**：README 第 46/155 行明确记录"教师已确认验收只需仿真"，并坦白"本机没有 Vivado，工程脚本尚未实测"。**没有假装跑过 Vivado**。
-6. **RTL 是纯 Verilog-2001**：意味着 ModelSim 下 `vlog` 基本一编就过，工具迁移成本极低。
+6. **RTL 是纯 Verilog-2001**：为迁移到 ModelSim 提供语法兼容基础，仍需验证 include 路径、测试台和初始化文件。
 
 ## 六、缺点与验收风险（重点）
 
@@ -117,12 +121,12 @@ make synth-xilinx   →  0 problems, 1914 LC, 1541 FDRE, 2×RAMB18E1
    - 现已在**不改一行逻辑**的前提下补齐：模块头（功能/端口/时序约定）、每级流水、前递优先级、load-use 触发条件、分支冲刷与异常优先级、子字访存对齐、定制指令语义均有注释。
    - 验证方式：`git diff` 去注释去空白后与原版**逐字符一致**；8 套自带 TB + 独立 TB 全部复跑通过。
    - **仍建议**：准备讲解稿 + 关键波形截图，把转发/停顿/冲刷讲到脱稿，注释只是"讲稿的备份"。
-2. **仿真工具与作业原文不符**：作业点名 **Mentor ModelSim**，仓库只给 iverilog + Vivado/XSim，**无 `.do` 脚本**。
-   - 缓解：RTL 是纯 Verilog-2001，**在 ModelSim 里 `vlog` + `vsim tb_rv32_soc` 基本直接能跑**。补一个 10 行的 `.do` 脚本成本极低（见建议 3）。
+2. **仿真工具与作业原文不符**：作业点名 **Mentor ModelSim**，原检查时只有 Icarus + Vivado/XSim；现有 ModelSim `.do` 脚本，但尚无实际运行证据。
+   - 缓解：RTL 是纯 Verilog-2001，RTL 语法兼容性不能代替工具实测；使用建议 3 中脚本验证编译、初始化和三个集成测试台的执行。
    - 加分：若验收现场就用 ModelSim，**能当场用 ModelSim 跑一遍**是最稳的。
 3. **Vivado 流程未被实测**：`create_project.tcl` 写得规范，但 README 自己承认本机没 Vivado、未验证。若老师要求"在你的 Vivado 里打开看看"，需提前建好工程并导入波形。
 4. **AI 参与痕迹可能被追问**：仓库内留了 `agent.md`（写给 AI 代理的工作说明），文档风格高度模板化，且"首次提交即完整 40 条指令 CPU"。
-   - **务必能逐行讲清转发/停顿/译码**，否则容易被质疑"是不是自己写的"。**强烈建议删掉 `agent.md`**。
+   - **务必能逐行讲清转发/停顿/译码**，否则容易被质疑"是不是自己写的"。`agent.md` 是仓库协作约定，是否保留不属于 CPU 正确性问题；工具使用说明按课程要求处理。
 5. **存储器过小、无外设**：`ADDR_BITS=8`，1KB + 1KB，只能跑玩具程序。仿真验收没问题，但如果老师想看"更真实的程序"会受限。
 6. 次要：无 `LICENSE`；`fence.i`/CSR/`mret` 未实现（非必需）。
 
@@ -136,14 +140,14 @@ make synth-xilinx   →  0 problems, 1914 LC, 1541 FDRE, 2×RAMB18E1
    - **`uadd8sat`**：CUSTOM-0 译码 + 饱和加法的 ALU 实现。
    **每段配一张波形**（用 `make test` 或 XSim 抓），现场可边指边说。
 2. **现场用老师要的工具跑一遍**：如果验收用 ModelSim，**提前装好 ModelSim 并跑通**，别现场才发现没装。
-3. **补一个 ModelSim `.do` 脚本**（成本极低）：
+3. **使用 ModelSim 示例脚本并完成实测**：
+   已增加 [`scripts/run_modelsim.do`](../scripts/run_modelsim.do)，以脚本所在位置定位仓库，设置 RTL/TB 的 include 路径，并将 `demo.mem` 复制到 `build/modelsim/` 运行目录。
+   在 ModelSim/Questa 的 Transcript 中执行（替换实际仓库路径）：
    ```tcl
-   vlib work
-   vlog -sv ../rtl/*.v ../sim_1/tb/*.sv
-   vsim -c tb_rv32_soc -do "run -all; quit"
+   do {D:/Projects/NEU-Risc-V/scripts/run_modelsim.do}
    ```
-   堵住"工具不符"的质疑，且能现场演示。
-4. **删掉 `agent.md`**：对交作业无益，反而暴露工具痕迹。
+   默认顶层为 `tb_rv32_soc`，可修改脚本中的 `testbench` 选择其他测试台。该脚本用于交互式演示；本机未安装 ModelSim/Questa，**命令流程仍待实际验证**。
+4. **按课程要求说明开发过程**：保留必要的仓库协作约定，准备能独立讲清实现和测试的材料；删改文件名不属于技术验收依据。
 5. **补讲"超出要求的部分"**：40 条指令、异常子系统、定制指令——这是拉开分差的地方，报告里要单独列一节。
 
 ---
@@ -153,15 +157,15 @@ make synth-xilinx   →  0 problems, 1914 LC, 1541 FDRE, 2×RAMB18E1
 **这是一份技术质量明显高于课程要求下限的作品。** 在"讲解 + 仿真"标准下，它的短板**不在设计本身**，而在**表达与形式对齐**。
 
 - **功能与仿真：接近满分**。流水线、转发、停顿、异常真实可用，8 套测试 + 我的 53 项独立断言全绿，可复现。
-- **讲解型验收的真实风险：注释极少（4%）**，讲解质量完全取决于你现场讲得清不清——**这是唯一可能让分数从 93 掉到 85 的地方**。
-- **估分：约 89–94 分（优秀）**。讲清转发/停顿/定制指令 → 取上限；被问住 → 取下限。
+- **注释已补齐**，原“注释极少 4%”只适用于补充前快照。当前仍需准备转发、停顿、冲刷的关键波形与现场讲解。
+- **评分边界**：上面的主观估分不构成成绩保证，实际评分由教师依据课程标准决定。
 
 **验收前最该做的事（按投入产出排序）：**
 1. **练熟 5 分钟讲解 + 备好波形图**（决定分数上限）；
 2. **在老师指定的仿真工具（ModelSim）里亲手跑通一遍**；
-3. **删掉 `agent.md`**。
+3. **保存复现命令、通过日志与关键波形**。
 
-> 一句话给作者：**代码比 90% 的同学好，但"讲"和"演"的准备度才是这次的真正战场。**
+> 没有同班作品数据支持百分位排名；可依赖的结论是当前 RTL 和定向仿真结果，以及尚待完成的指定工具实测。
 
 ---
 
@@ -201,3 +205,12 @@ make synth-xilinx   →  0 problems, 1914 LC, 1541 FDRE, 2×RAMB18E1
 | 纯注释行 | ~34 (4%) | 247 |
 | 含注释行（含行尾） | — | 411 |
 | `rv32_core.v` 纯注释 | 3 | 逐段覆盖 |
+
+
+## 附：复核修订
+
+- 五个独立测试原本在出现 `errors` 时仍正常 `$finish`，现改为错误计数非零时 `$fatal(1, ...)`；通过时打印 `PASS`。
+- `make test` 现运行八套原有测试和五套独立测试；`make test-review` 单独运行独立测试，合计 53 项检查。
+- 修正 load-use“只停顿不前递”、WB 错写 `exmem_result`、LUI 误列在加法路径等注释；明确异常端口并非实际 CSR、内存输入按字节寻址。
+- 展开被压回单行的译码分支，恢复设计书约定的格式。
+- 修正 ModelSim 示例路径、include 搜索路径和 ROM 初始化文件安排；实际 ModelSim 运行状态仍为未验证。

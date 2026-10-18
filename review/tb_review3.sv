@@ -1,5 +1,5 @@
 // Independent review testbench (v3) - uses the real SoC with synchronous memory.
-// Written by the reviewer for acceptance checking; NOT part of the hand-in.
+// Written by the reviewer; included in make test and make test-review.
 `timescale 1ns/1ps
 module tb_review3;
     reg clk = 0;
@@ -54,6 +54,7 @@ module tb_review3;
     endtask
 
     initial begin
+        #1; // 等待存储器 initial 初始化结束，再写入测试程序。
         $display("==== REVIEW TB v3 (real SoC, synchronous memory) ====");
 
         // ---------- A: load-use hazard with NO independent instruction between ----------
@@ -120,6 +121,9 @@ module tb_review3;
         check32(dut.core.regfile.regs[5], 32'd1,        "sltu x5");
 
         $display("==== RESULT: %0d checks, %0d errors ====", checks, errors);
+        if (errors != 0)
+            $fatal(1, "independent review failed: %0d errors", errors);
+        $display("PASS: independent review (%0d checks)", checks);
         $finish;
     end
 endmodule

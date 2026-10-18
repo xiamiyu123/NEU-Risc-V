@@ -20,6 +20,7 @@ set_property generic {IMEM_FILE="demo.mem"} [get_filesets sources_1]
 
 set tb_dir [file join $src_dir sim_1 tb]
 add_files -fileset sim_1 -norecurse [glob [file join $tb_dir *.sv] [file join $tb_dir *.svh]]
+add_files -fileset sim_1 -norecurse [glob [file join $root_dir review tb_review*.sv]]
 set_property include_dirs [list $tb_dir $rtl_dir] [get_filesets sim_1]
 set_property top tb_rv32_soc [get_filesets sim_1]
 set_property xsim.simulate.runtime all [get_filesets sim_1]

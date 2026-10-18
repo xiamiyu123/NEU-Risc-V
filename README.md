@@ -14,9 +14,38 @@ make synth-check
 make synth-xilinx
 ```
 
-`make test` 运行八套自检，包含 ALU、译码、寄存器堆、同步存储器单元测试，以及流水线、ROM 演示、RV32I 指令/异常和流水线边界回归。每套测试的输出保存到 `build/<测试台名>.log`，断言失败会令 Make 返回非零退出码。覆盖范围见 [设计书的验证说明](CPU_DESIGN.md#10-验证方式与当前证据)。
+`make test` 运行十三套自检：八套模块/集成测试，以及 `review/` 下五套独立复核测试（53 项检查）。覆盖 ALU、译码、寄存器堆、同步存储器、流水线、ROM 演示、RV32I 指令/异常和流水线边界。每套输出保存到 `build/<测试台名>.log`，断言失败会令 Make 返回非零退出码。覆盖范围见 [设计书的验证说明](CPU_DESIGN.md#10-验证方式与当前证据)。
 
-可单独运行一套，例如 `make test-tb_alu` 或 `make test-tb_pipeline_edges`。`make synth-check` 做通用综合，`make synth-xilinx` 做 Xilinx 7 系列映射；所有日志位于忽略跟踪的 `build/`。
+可单独运行一套，例如 `make test-tb_alu` 或 `make test-tb_review3`；`make test-review` 仅运行五套独立复核。`make synth-check` 做通用综合，`make synth-xilinx` 做 Xilinx 7 系列映射；所有日志位于忽略跟踪的 `build/`。
+
+### 导出与查看测试波形
+
+普通 `make test` 只输出自检日志。增加波形导出时，自检仍会运行，失败仍返回非零退出码：
+
+```sh
+make wave                      # 综合场景：流水线、转发、停顿、跳转
+make wave-tb_pipeline_edges     # 边界场景：异常、冲刷、中途复位
+make wave-tb_demo               # ROM 演示
+make wave-tb_review8            # load→store、load 地址依赖
+```
+
+全部十三套测试均支持 `make wave-<测试台名>`，生成 `build/<测试台名>.vcd`，日志仍保存为 `.log`。安装 GTKWave 后，例如执行 `gtkwave build/tb_rv32_soc.vcd` 即可查看；VCD 来自真实 RTL 仿真，不是示意图。导出包括层次中的标量和向量信号，不保证展开寄存器、RAM 等数组的全部元素，可通过写回和访存接口观察它们的变化。
+
+在波形查看器中展开 `tb_rv32_soc/dut/core`，建议按以下顺序添加信号，多位数据设为十六进制：
+
+| 观察内容 | 信号 | 重点 |
+| --- | --- | --- |
+| 时钟与取指 | `clk`、`rst`、`pc`、`imem_re`、`ifid_pc`、`ifid_instr` | 顺序取指时 PC 加 4，停顿时保持 |
+| 流水推进 | `ifid_valid`、`idex_valid`、`exmem_valid`、`memwb_valid` | 有效位为 0 的项是气泡，数据字段可能仍保留旧值 |
+| 转发 | `idex_rs1_data`、`idex_rs2_data`、`ex_rs1`、`ex_rs2`、`exmem_result`、`wb_data` | EX 使用的值可能来自前级结果，而不是 ID 原读值 |
+| load-use | `load_stall`、`idex_memread`、`idex_rd` | 停顿时 PC/IF-ID 保持，ID/EX 插入气泡，后端继续推进 |
+| 跳转与冲刷 | `redirect`、`target_pc`、`idex_pc`、`branch_taken` | 命中跳转后 PC 改为目标，前端有效位清零 |
+| 访存与写回 | `dmem_re`、`dmem_we`、`dmem_addr`、`dmem_wdata`、`wb_we`、`memwb_rd`、`wb_data` | 检查实际读写地址、数据和目标寄存器 |
+| 异常 | `ex_exception_valid`、`trap_pending`、`fault`、`fault_cause`、`fault_pc` | 故障指令取消，老指令排空后 `fault` 置位 |
+
+先看 `tb_rv32_soc` 的停顿与跳转，再看 `tb_pipeline_edges` 的异常和复位；它们包含多个独立场景，`rst` 再次拉高表示新场景开始。`tb_demo` 的最终演示结果位于 `dut/result_valid` 和 `dut/result_data`。
+
+Vivado/XSim 可按下文直接添加内部信号查看原生波形；ModelSim/Questa 的 `scripts/run_modelsim.do` 已加入层次信号记录和波形显示命令，仍待在对应工具中实测。
 
 ## 结构与接口
 
@@ -97,6 +126,8 @@ NEU-Risc-V/build/vivado/neu_risc_v.xpr
 
 新增测试台为 `tb_alu`、`tb_control`、`tb_regfile`、`tb_memory`、`tb_pipeline_edges`。ALU 测试包含 65,536 对字节输入，仿真时间约为 78 μs，使用 `run all` 等待其自行结束。工程脚本会收集所有 `.sv` 测试文件；旧工程需刷新文件集或按重建流程重新创建工程。
 
+工程脚本也会加入 `review/tb_review{3,4,6,7,8}.sv` 五个独立复核测试台，可同样设为仿真顶层运行。
+
 演示程序结束时应有 `result_valid=1`、`result_data=0x112234ff`。`.mem` 已加入工程，测试台使用文件名 `demo.mem` 读取，无需手动改成绝对路径。综合顶层的工程参数为 `IMEM_FILE="demo.mem"`；RTL 本身仍保留空初始化文件的默认参数。
 
 查看内部波形时，在 **Scope** 中选择 `dut` 或 `dut/core`，在 **Objects** 中选中所需信号并使用 **Add to Wave Window**。若信号在首次运行后才加入，执行 **Restart**，再 **Run All**，以记录从复位开始的波形。保存自检日志和关键波形用于验收。
@@ -154,4 +185,6 @@ jal       x0, 0
 
 2026-10-08，用户转述教师确认验收只需仿真，不要求上板。RTL 已通过本地 Icarus 仿真、Yosys 通用综合及 Xilinx 7 系列映射检查。已提供 Vivado 工程生成脚本；本机没有 Vivado，实际建工程和 Vivado 行为仿真尚未验证。
 
-验收准备包括运行八套测试台的行为仿真，保存自检通过的日志，并整理流水线转发、load-use 停顿、分支冲刷、异常和定制指令的关键波形。演示程序预期结果为 `result_valid=1`、`result_data=0x112234ff`。板级封装、引脚约束、bitstream 和实板运行作为可选扩展。
+验收准备包括运行十三套测试台的行为仿真，保存自检通过的日志，并整理流水线转发、load-use 停顿、分支冲刷、异常和定制指令的关键波形。演示程序预期结果为 `result_valid=1`、`result_data=0x112234ff`。板级封装、引脚约束、bitstream 和实板运行作为可选扩展。
+
+ModelSim/Questa 的交互式入口为 `scripts/run_modelsim.do`：在其 Transcript 中执行 `do {D:/Projects/NEU-Risc-V/scripts/run_modelsim.do}`，替换实际路径即可。脚本默认运行 `tb_rv32_soc`，可修改 `testbench` 选择其他测试台。此入口已按当前目录结构整理，但尚未经实际 ModelSim/Questa 运行验证。

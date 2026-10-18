@@ -53,6 +53,7 @@ module tb_review6;
     endtask
 
     initial begin
+        #1; // 等待存储器 initial 初始化结束，再写入测试程序。
         $display("==== REVIEW TB v6 (sub-word + traps, corrected) ====");
 
         // ---------- A: sb then lb/lbu sign extension ----------
@@ -111,6 +112,9 @@ module tb_review6;
         check32({27'b0, fault_cause}, 32'd2, "illegal instr cause=2");
 
         $display("==== RESULT: %0d checks, %0d errors ====", checks, errors);
+        if (errors != 0)
+            $fatal(1, "independent review failed: %0d errors", errors);
+        $display("PASS: independent review (%0d checks)", checks);
         $finish;
     end
 endmodule

@@ -1,18 +1,5 @@
 `timescale 1ns/1ps
-//=============================================================================
-// 模块名 : rv32_soc
-// 文件   : rv32_soc.v
-// 功能   : 仿真用 SoC 顶层，把 CPU 核与指令存储器（imem）、数据存储器（dmem）连接起来
-// 结构   :
-//     rv32_core ──┬── imem (rv32_sync_mem, 只读, 装载 IMEM_FILE)
-//                 └── dmem (rv32_sync_mem, 可读写, 装载 DMEM_FILE)
-// 参数   : ADDR_BITS  存储器地址位宽
-//          IMEM_FILE  指令存储器初始化文件
-//          DMEM_FILE  数据存储器初始化文件
-// 说明   : 本模块纯做“连线 + 少量观测逻辑”，不含流水线控制，便于仿真观察。
-//          result_valid/result_data：当程序向地址 0 写满一个字时，
-//          视为“演示程序输出结果”，锁存起来供 testbench 检查。
-//=============================================================================
+// CPU、指令/数据存储器与演示结果端口的连接。
 module rv32_soc #(
     parameter ADDR_BITS = 8,
     parameter IMEM_FILE = "",
@@ -20,29 +7,28 @@ module rv32_soc #(
 ) (
     input  wire        clk,
     input  wire        rst,
-    // ---- 异常/故障观测信号（供 testbench 检查异常处理）----
-    output wire        fault,        // 发生异常并已停机
-    output wire [4:0]  fault_cause,  // 异常原因编码（mcause）
-    output wire [31:0] fault_pc,     // 触发异常的指令地址
-    output wire [31:0] fault_tval,   // 异常相关值（mtval）
-    // ---- 调试/归档观测信号 ----
-    output wire [31:0] debug_pc,     // 当前 PC
-    output wire        retire_valid, // 本拍有指令写回
-    output wire [4:0]  retire_rd,    // 写回目标寄存器号
-    output wire [31:0] retire_data,  // 写回数据
-    // ---- 演示程序结果锁存（写地址 0 触发）----
-    output reg         result_valid,
-    output reg  [31:0] result_data
+
+    output wire        fault,
+    output wire [4:0]  fault_cause,
+    output wire [31:0] fault_pc,
+    output wire [31:0] fault_tval,
+
+    output wire [31:0] debug_pc,
+    output wire        retire_valid, // 非 x0 寄存器写回
+    output wire [4:0]  retire_rd,
+    output wire [31:0] retire_data,
+
+    output reg         result_valid, // 地址 0 整字写入标志
+    output reg  [31:0] result_data // 最近一次结果
 );
-    // CPU <-> imem 连线
+
     wire [31:0] imem_addr, imem_rdata;
     wire        imem_re;
-    // CPU <-> dmem 连线
+
     wire [31:0] dmem_addr, dmem_wdata, dmem_rdata;
     wire        dmem_re, dmem_we;
     wire [3:0]  dmem_wstrb;
 
-    // 处理器核：对外暴露独立的指令/数据访存接口
     rv32_core #(.MEM_ADDR_BITS(ADDR_BITS)) core (
         .clk(clk),
         .rst(rst),
@@ -65,7 +51,6 @@ module rv32_soc #(
         .retire_data(retire_data)
     );
 
-    // 指令存储器：只读（we 恒 0），由 IMEM_FILE 预装载
     rv32_sync_mem #(.ADDR_BITS(ADDR_BITS), .INIT_FILE(IMEM_FILE)) imem (
         .clk(clk),
         .re(imem_re),
@@ -76,7 +61,6 @@ module rv32_soc #(
         .rdata(imem_rdata)
     );
 
-    // 数据存储器：可读可写，由 DMEM_FILE 预装载
     rv32_sync_mem #(.ADDR_BITS(ADDR_BITS), .INIT_FILE(DMEM_FILE)) dmem (
         .clk(clk),
         .re(dmem_re),
@@ -87,8 +71,6 @@ module rv32_soc #(
         .rdata(dmem_rdata)
     );
 
-    // 结果锁存：当 CPU 向地址 0 写满一个完整的字（wstrb=4'b1111）时，
-    // 认为演示程序给出了输出，锁存该数据供 testbench 读取。
     always @(posedge clk) begin
         if (rst) begin
             result_valid <= 0;
