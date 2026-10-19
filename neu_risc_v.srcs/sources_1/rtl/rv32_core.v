@@ -28,13 +28,13 @@ module rv32_core #(
     output wire [31:0] retire_data
 );
 
-    // IF/ID
+    // IF：取指与 IF/ID 流水寄存器。
     reg [31:0] pc;
     reg        ifid_valid;
     reg [31:0] ifid_pc;
     wire [31:0] ifid_instr = imem_rdata;
 
-    // ID 译码
+    // ID：译码信号。
     wire [4:0] dec_rs1, dec_rs2, dec_rd;
     wire [2:0] dec_funct3;
     wire dec_valid, dec_regwrite, dec_memread, dec_memwrite;
@@ -44,6 +44,7 @@ module rv32_core #(
     wire [3:0] dec_alu_op;
     wire [31:0] dec_imm;
 
+    // 指令译码器。
     rv32_control control (
         .instr(ifid_instr),
         .rs1(dec_rs1),
@@ -68,7 +69,7 @@ module rv32_core #(
         .imm(dec_imm)
     );
 
-    // MEM/WB 与加载扩展
+    // MEM/WB 流水寄存器。
     reg        memwb_valid, memwb_regwrite, memwb_memread;
     reg [4:0]  memwb_rd;
     reg [2:0]  memwb_funct3; // 加载类型
@@ -77,6 +78,7 @@ module rv32_core #(
     wire [31:0] wb_data;
     wire        wb_we;
 
+    // 加载数据处理。
     wire [31:0] load_shifted = dmem_rdata >> {memwb_lane, 3'b000};
     reg  [31:0] load_result;
     always @* begin
@@ -90,6 +92,7 @@ module rv32_core #(
         endcase
     end
 
+    // 通用寄存器堆。
     wire [31:0] dec_rs1_data, dec_rs2_data;
     rv32_regfile regfile (
         .clk(clk),
@@ -103,7 +106,7 @@ module rv32_core #(
         .rdata2(dec_rs2_data)
     );
 
-    // ID/EX
+    // ID/EX 流水寄存器。
     reg idex_valid, idex_regwrite, idex_memread, idex_memwrite;
     reg idex_op1_pc, idex_op2_imm, idex_branch, idex_jump, idex_jalr, idex_link;
     reg idex_exception_valid;
@@ -114,17 +117,17 @@ module rv32_core #(
     reg [4:0] idex_rs1, idex_rs2, idex_rd;
     reg [31:0] idex_pc, idex_pc4, idex_rs1_data, idex_rs2_data, idex_imm;
 
-    // EX/MEM
+    // EX/MEM 流水寄存器。
     reg exmem_valid, exmem_regwrite, exmem_memread, exmem_memwrite;
     reg [4:0] exmem_rd;
     reg [2:0] exmem_funct3;
     reg [31:0] exmem_result, exmem_addr, exmem_store_data;
 
-    // WB
+    // WB：寄存器写回。
     assign wb_data = memwb_memread ? load_result : memwb_result;
     assign wb_we   = !rst && memwb_valid && memwb_regwrite && memwb_rd != 0;
 
-    // EX 转发与执行
+    // 数据冒险：EX 数据转发。
     wire [31:0] ex_rs1 = idex_rs1 == 0 ? 0 :
         (exmem_valid && exmem_regwrite && !exmem_memread &&
          exmem_rd != 0 && exmem_rd == idex_rs1 ? exmem_result :
@@ -134,9 +137,11 @@ module rv32_core #(
          exmem_rd != 0 && exmem_rd == idex_rs2 ? exmem_result :
          wb_we && memwb_rd == idex_rs2 ? wb_data : idex_rs2_data);
 
+    // ALU 操作数选择。
     wire [31:0] alu_a = idex_op1_pc ? idex_pc  : ex_rs1;
     wire [31:0] alu_b = idex_op2_imm ? idex_imm : ex_rs2;
     wire [31:0] alu_result;
+    // ALU 运算单元。
     rv32_alu alu (
         .op(idex_alu_op),
         .a(alu_a),
@@ -144,7 +149,7 @@ module rv32_core #(
         .result(alu_result)
     );
 
-    // EX 分支判定
+    // 控制冒险：EX 分支条件判断。
     reg branch_taken;
     always @* begin
         case (idex_funct3)
@@ -158,12 +163,13 @@ module rv32_core #(
         endcase
     end
 
+    // 控制冒险：跳转判断与目标地址计算。
     wire redirect = idex_valid && (idex_jump || (idex_branch && branch_taken));
 
     wire [31:0] target_pc = idex_jalr ?
         ((ex_rs1 + idex_imm) & 32'hfffffffe) : idex_pc + idex_imm;
 
-    // EX 异常判定
+    // EX：异常检测。
     reg ex_exception_valid;
     reg [4:0] ex_exception_cause;
     reg [31:0] ex_exception_tval;
@@ -190,19 +196,21 @@ module rv32_core #(
         end
     end
 
-    // Load-use 检测
+    // 数据冒险：Load-use 检测。
     wire load_stall = idex_valid && idex_memread && idex_rd != 0 && ifid_valid &&
         ((dec_uses_rs1 && dec_rs1 == idex_rd) ||
          (dec_uses_rs2 && dec_rs2 == idex_rd));
     reg trap_pending; // 等待老指令排空
 
-    // 访存与观测接口
+    // 指令存储器接口。
     assign imem_addr = pc;
 
     assign imem_re   = !rst && !fault && !trap_pending &&
                        !load_stall && !redirect && !ex_exception_valid;
+    // 数据存储器地址。
     assign dmem_addr  = exmem_addr;
 
+    // 存储数据与字节写掩码。
     assign dmem_wdata = exmem_store_data << {exmem_addr[1:0], 3'b000};
     always @* begin
         case (exmem_funct3)
@@ -212,14 +220,16 @@ module rv32_core #(
             default: dmem_wstrb = 0;
         endcase
     end
+    // 数据存储器读写使能。
     assign dmem_re = !rst && exmem_valid && exmem_memread;
     assign dmem_we = !rst && exmem_valid && exmem_memwrite;
+    // 调试与写回观测接口。
     assign debug_pc     = pc;
     assign retire_valid = wb_we;
     assign retire_rd    = memwb_rd;
     assign retire_data  = wb_data;
 
-    // 流水寄存器更新
+    // 流水寄存器更新。
     always @(posedge clk) begin
         if (rst) begin
             pc <= 0;
@@ -234,7 +244,9 @@ module rv32_core #(
             trap_pending <= 0;
             idex_exception_valid <= 0;
         end else begin
+            // 前端控制。
             if (ex_exception_valid) begin
+                // 异常处理。
                 trap_pending <= 1;
                 fault_cause <= ex_exception_cause;
                 fault_pc    <= idex_pc;
@@ -242,6 +254,7 @@ module rv32_core #(
                 ifid_valid  <= 0;
                 idex_valid  <= 0;
             end else if (trap_pending || fault) begin
+                // 流水线排空与停机。
                 ifid_valid <= 0;
                 idex_valid <= 0;
                 if (trap_pending && !exmem_valid && !memwb_valid) begin
@@ -249,10 +262,12 @@ module rv32_core #(
                     fault <= 1;
                 end
             end else if (redirect) begin
+                // 控制冒险：跳转与冲刷。
                 pc <= target_pc;
                 ifid_valid <= 0;
                 idex_valid <= 0;
             end else if (load_stall) begin
+                // 数据冒险：停顿与气泡。
                 idex_valid <= 0;
             end else begin
                 pc <= pc + 4;
@@ -261,7 +276,7 @@ module rv32_core #(
                 idex_valid <= ifid_valid;
             end
 
-            // ID/EX
+            // ID->EX：更新下一级流水寄存器。
             if (!ex_exception_valid && !trap_pending && !fault &&
                 !redirect && !load_stall) begin
                 idex_pc       <= ifid_pc;
@@ -284,6 +299,7 @@ module rv32_core #(
                 idex_jalr     <= dec_jalr;
                 idex_link     <= dec_link;
 
+                // ID 异常标记。
                 idex_exception_valid <= ifid_valid &&
                     ((|ifid_pc[31:MEM_ADDR_BITS+2]) || !dec_valid || dec_system_trap);
                 idex_exception_cause <= (|ifid_pc[31:MEM_ADDR_BITS+2]) ? 1 :
@@ -292,7 +308,7 @@ module rv32_core #(
                     (!dec_valid ? ifid_instr : 0);
             end
 
-            // EX/MEM
+            // EX->MEM：更新下一级流水寄存器。
             exmem_valid      <= idex_valid && !ex_exception_valid;
             exmem_regwrite   <= idex_regwrite;
             exmem_memread    <= idex_memread;
@@ -303,7 +319,7 @@ module rv32_core #(
             exmem_addr       <= alu_result;
             exmem_store_data <= ex_rs2;
 
-            // MEM/WB
+            // MEM->WB：更新下一级流水寄存器。
             memwb_valid    <= exmem_valid;
             memwb_regwrite <= exmem_regwrite;
             memwb_memread  <= exmem_memread;
